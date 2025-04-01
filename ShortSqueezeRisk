@@ -1,0 +1,78 @@
+import pandas as pd
+import yfinance as yf
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
+
+# List of stock tickers
+tickers = [
+    "AAPL", "TSLA", "AMZN", "MSFT", "GOOGL",
+    "NFLX", "META", "NVDA", "BABA", "JPM", "GM"
+]
+
+def get_stock_data():
+    data = []
+    for ticker in tickers:
+        try:
+            stock = yf.Ticker(ticker)
+            info = stock.info
+            
+            # Get real values
+            short_interest = info.get('shortPercentOfFloat', 0)
+            institutional_ownership = info.get('heldPercentInstitutions', 0)
+            volume = info.get('averageVolume', 0)
+            
+            # Convert to percentages
+            short_interest = float(short_interest) * 100 if short_interest else 0
+            institutional_ownership = float(institutional_ownership) * 100 if institutional_ownership else 0
+            volume = float(volume) if volume else 1
+            
+            # Calculate crowdedness score
+            crowdedness_score = (
+                (short_interest * 0.4) +
+                (institutional_ownership * 0.4) +
+                ((1 / (volume + 1e-5)) * 100000 * 0.2)
+            )
+            
+            data.append({
+                "Ticker": ticker,
+                "Short Interest %": round(short_interest, 2),
+                "Institutional Ownership %": round(institutional_ownership, 2),
+                "Average Daily Volume": int(volume),
+                "Crowdedness Score": round(crowdedness_score, 2)
+            })
+            
+        except Exception as e:
+            print(f"Error getting data for {ticker}: {e}")
+    
+    return pd.DataFrame(data)
+
+def create_pdf(df):
+    # Sort dataframe by Crowdedness Score in descending order (highest first)
+    df = df.sort_values(by="Crowdedness Score", ascending=False)
+    
+    doc = SimpleDocTemplate("Crowdedness_Report.pdf", pagesize=letter)
+    elements = []
+
+    # Convert sorted dataframe to list for table
+    data = [df.columns.tolist()] + df.values.tolist()
+    
+    # Create table
+    table = Table(data)
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 12),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+    ]))
+    
+    elements.append(table)
+    doc.build(elements)
+
+# Main execution
+df = get_stock_data()
+create_pdf(df)
+print("Report generated as 'stock_report.pdf'")
